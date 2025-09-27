@@ -1,0 +1,54 @@
+name: "Build and Deploy"
+
+on:
+  push:
+    branches:
+      - "main"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract the version
+        id: version
+        run: echo "version=$(sed -n '1s/.*://p' Dockerfile)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: metadata
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=semver,pattern={{version}},value=${{ steps.version.outputs.version }},match=\d.\d.\d$
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.version }},match=\d.\d.\d$
+            type=semver,pattern={{major}},value=${{ steps.version.outputs.version }},match=\d.\d.\d$
+          flavor: latest=true
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
